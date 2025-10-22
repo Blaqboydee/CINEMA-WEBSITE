@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": "myCinema",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

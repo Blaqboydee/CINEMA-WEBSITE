@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <link
+      rel="shortcut icon"
+      href="WhatsApp Image 2025-03-08 at 22.03.05_91a1316a.jpg"
+      type="image/x-icon"
+    />
+    <link rel="stylesheet" href="admin.css">
+    <title>Admin Dashboard</title>
+  </head>
+  <body>
+    <header class="admin-header">
+      <h2>Admin Panel</h2>
+      <input
+        type="text"
+        id="search"
+        placeholder="🔍 Search by Booking ID"
+        oninput="searchTickets()"
+      />
+
+      <nav>
+        <a href="#" id="logout">Logout</a>
+      </nav>
+    </header>
+
+    <main class="main-content">
+      <section class="dashboard">
+        <h1>Dashboard Overview</h1>
+        <div class="stats">
+          <div class="card">
+            <h3>Total Tickets</h3>
+            <p id="total-tickets">0</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Loading State -->
+      <div class="loading-container active" id="loadingSpinner">
+        <div class="spinner"></div>
+        <p class="loading-text">Loading tickets...</p>
+      </div>
+
+      <section class="manage-tickets">
+        <h2>Manage Tickets</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>User Email</th>
+                <th>Booking ID</th>
+                <th>Movie</th>
+                <th>Seats</th>
+                <th>Location</th>
+                <th>Ticket Type</th>
+                <th>Price Paid</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="ticket-list"></tbody>
+          </table>
+          <div class="no-results" id="noResults">No tickets found matching your search.</div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyAyiKbmo11gTMiCtnGat1dmefuCD4SsOQw",
+        authDomain: "my-cinema-ffb85.firebaseapp.com",
+        databaseURL: "https://my-cinema-ffb85-default-rtdb.firebaseio.com",
+        projectId: "my-cinema-ffb85",
+        storageBucket: "my-cinema-ffb85.appspot.com",
+        messagingSenderId: "1049223253912",
+        appId: "1:1049223253912:web:4a244001cd80720753e5ed",
+        measurementId: "G-H8NBJJMKX3",
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+      const db = firebase.database();
+
+      // Show/Hide Loading Spinner
+      function showLoadingSpinner() {
+        document.getElementById("loadingSpinner").classList.add("active");
+      }
+
+      function hideLoadingSpinner() {
+        document.getElementById("loadingSpinner").classList.remove("active");
+      }
+
+      // Show Skeleton Loader
+      function showSkeletonLoader() {
+        const ticketList = document.getElementById("ticket-list");
+        ticketList.innerHTML = `
+          <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+          <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+          <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+          <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+        `;
+      }
+
+      // Auth State
+      firebase.auth().onAuthStateChanged((user) => {
+        if (user) {
+          checkAdminRole(user.email);
+        } else {
+          window.location.href = "adminLogin.html";
+        }
+      });
+
+      // Check Admin Role
+      function checkAdminRole(userEmail) {
+        const formattedEmail = userEmail.replace(/\./g, "_");
+
+        firebase
+          .database()
+          .ref("admins/" + formattedEmail)
+          .once("value")
+          .then((snapshot) => {
+            if (snapshot.exists() && snapshot.val().role === "admin") {
+              console.log("Admin verified");
+              loadTickets();
+            } else {
+              alert("Access denied: Admins only.");
+              window.location.href = "index.html";
+            }
+          })
+          .catch((error) => {
+            console.error("Error checking admin role:", error);
+            hideLoadingSpinner();
+          });
+      }
+
+      // Logout
+      document.getElementById("logout").addEventListener("click", () => {
+        auth
+          .signOut()
+          .then(() => {
+            alert("Logged out successfully.");
+            window.location.href = "index.html";
+          })
+          .catch((error) => {
+            console.error("Logout Error:", error);
+          });
+      });
+
+      // Load Tickets
+      function loadTickets() {
+        const ticketList = document.getElementById("ticket-list");
+        showSkeletonLoader();
+        
+        let countTotal = 0;
+        const BookingRef = db.ref("bookings");
+
+        BookingRef.once("value", (snapshot) => {
+          ticketList.innerHTML = "";
+          hideLoadingSpinner();
+
+          if (!snapshot.exists()) {
+            ticketList.innerHTML = '<tr><td colspan="8" class="empty-state">No tickets found.</td></tr>';
+            document.getElementById("total-tickets").innerText = "0";
+            return;
+          }
+
+          snapshot.forEach((childSnapshot) => {
+            const userEmail = childSnapshot.key;
+            const bookingData = childSnapshot.val();
+
+            Object.keys(bookingData).forEach((bookingKey) => {
+              countTotal++;
+              const booking = bookingData[bookingKey];
+
+              const row = document.createElement("tr");
+              row.innerHTML = `
+                <td>${booking.Email || userEmail.replace(/_/g, ".")}</td>
+                <td data-booking-id="${bookingKey}">${bookingKey}</td>
+                <td>${booking.movie || "N/A"}</td>
+                <td>${Array.isArray(booking.seats) ? booking.seats.join(", ") : booking.seats || "N/A"}</td>
+                <td>${booking.location || "N/A"}</td>
+                <td>${booking.TypeOfTicket || "N/A"}</td>
+                <td>₦${booking.Cost || "0"}</td>
+                <td>
+                  <button class="cancelTicket" onclick="cancelBooking('${bookingKey}', '${userEmail}', this)">Cancel</button>
+                </td>
+              `;
+              ticketList.appendChild(row);
+            });
+          });
+
+          // Update stats
+          document.getElementById("total-tickets").innerText = countTotal;
+        }).catch(error => {
+          console.error("Error loading tickets:", error);
+          hideLoadingSpinner();
+          ticketList.innerHTML = '<tr><td colspan="8" class="empty-state">Error loading tickets. Please refresh.</td></tr>';
+        });
+      }
+
+      // Cancel Booking
+      function cancelBooking(bookingId, userEmail, button) {
+        if (
+          confirm(
+            "Are you sure you want to cancel this ticket? Ensure refund application has been confirmed before cancelling."
+          )
+        ) {
+          // Show loading state on button
+          const originalText = button.textContent;
+          button.disabled = true;
+          button.textContent = "Cancelling...";
+
+          const bookingRef = firebase
+            .database()
+            .ref(`bookings/${userEmail}/${bookingId}`);
+
+          bookingRef.once("value", (snapshot) => {
+            if (snapshot.exists()) {
+              const bookingData = snapshot.val();
+
+              // Release seats
+              if (bookingData.seats && Array.isArray(bookingData.seats)) {
+                bookingData.seats.forEach((seat) => {
+                  const seatId = seat.replace("Seat ", "");
+                  firebase
+                    .database()
+                    .ref(
+                      `seats/${bookingData.location}/${bookingData.showTime}/${seatId}`
+                    )
+                    .update({ available: true });
+                });
+              }
+
+              // Remove booking
+              bookingRef
+                .remove()
+                .then(() => {
+                  alert("Booking cancelled successfully.");
+                  loadTickets(); // Reload tickets
+                })
+                .catch((error) => {
+                  console.error("Error cancelling booking:", error);
+                  alert("Error cancelling booking. Please try again.");
+                  button.disabled = false;
+                  button.textContent = originalText;
+                });
+            } else {
+              alert("Booking not found.");
+              button.disabled = false;
+              button.textContent = originalText;
+            }
+          });
+        }
+      }
+
+      // Search Tickets
+      function searchTickets() {
+        const searchInput = document.getElementById("search").value.toLowerCase();
+        const ticketList = document.getElementById("ticket-list");
+        const rows = ticketList.getElementsByTagName("tr");
+        const noResults = document.getElementById("noResults");
+        let visibleCount = 0;
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const bookingIdCell = row.getElementsByTagName("td")[1];
+
+          if (bookingIdCell) {
+            const bookingIdText = bookingIdCell.textContent || bookingIdCell.innerText;
+            if (bookingIdText.toLowerCase().indexOf(searchInput) > -1) {
+              row.style.display = "";
+              visibleCount++;
+            } else {
+              row.style.display = "none";
+            }
+          }
+        }
+
+        // Show/hide no results message
+        if (visibleCount === 0 && searchInput !== "") {
+          noResults.classList.add("active");
+        } else {
+          noResults.classList.remove("active");
+        }
+      }
+
+      // Load tickets on page load
+      window.onload = function() {
+        // Auth state will trigger loadTickets
+      };
+    </script>
+  </body>
+</html>
